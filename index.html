@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meine Rezepte</title>
+    
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#4CAF50"> <link rel="icon" sizes="192x192" href="icon.png">
+
+    <style>
+        :root { 
+            --primary: #4CAF50; /* Klassisches Android Grün */
+            --danger: #e53935; 
+            --bg: #eeeeee; 
+        }
+        body { 
+            font-family: "Roboto", sans-serif; /* Standard Android Schrift */
+            margin: 0; background: var(--bg); color: #212121; 
+        }
+        
+        header { 
+            background: var(--primary); padding: 16px; color: white;
+            text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            position: sticky; top: 0; z-index: 10; 
+        }
+        h1 { margin: 0; font-size: 1.25rem; font-weight: 500; }
+
+        .container { padding: 16px; max-width: 600px; margin: auto; }
+
+        /* Suchfeld (Material Design Style) */
+        .search-bar { 
+            width: 100%; padding: 12px 16px; margin-bottom: 16px; 
+            border: none; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            font-size: 1rem; outline: none;
+        }
+
+        /* Rezept-Liste */
+        .recipe-list { list-style: none; padding: 0; }
+        .recipe-item { 
+            background: white; margin-bottom: 8px; padding: 16px; 
+            border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .recipe-name { flex-grow: 1; cursor: pointer; font-size: 1.1rem; }
+        .delete-btn { background: none; border: none; font-size: 1.4rem; cursor: pointer; padding: 4px; }
+
+        /* Detailansicht (Vollbild) */
+        #detail-view { 
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: #000; z-index: 20; overflow-y: auto; 
+        }
+        #detail-view img { width: 100%; height: auto; display: block; }
+        .back-btn { 
+            position: fixed; top: 16px; left: 16px; background: rgba(0,0,0,0.5); 
+            color: white; border: none; padding: 8px 16px; border-radius: 4px; z-index: 30; 
+        }
+
+        /* Hinzufügen-Bereich */
+        .add-section { 
+            background: white; padding: 16px; border-radius: 4px; 
+            margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); 
+        }
+        input[type="text"] { 
+            width: 100%; padding: 12px 0; margin-bottom: 16px; 
+            border: none; border-bottom: 2px solid #ccc; font-size: 1rem; outline: none;
+        }
+        input[type="text"]:focus { border-bottom-color: var(--primary); }
+        .add-btn { 
+            background: var(--primary); color: white; border: none; 
+            padding: 12px; border-radius: 4px; width: 100%; 
+            font-size: 1rem; font-weight: bold; text-transform: uppercase;
+        }
+        
+        .backup-section { text-align: center; margin-top: 40px; border-top: 1px solid #ccc; padding-top: 16px; }
+        .backup-btn { background: #ddd; border: none; padding: 8px 12px; margin: 4px; border-radius: 4px; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+
+    <div id="main-view">
+        <header><h1>🍴 Meine Rezept-Sammlung</h1></header>
+        <div class="container">
+            <div class="add-section">
+                <input type="text" id="recipe-name" placeholder="Name des Rezepts">
+                <input type="file" id="recipe-file" accept="image/*">
+                <button class="add-btn" onclick="processAndSave()">Hinzufügen</button>
+            </div>
+
+            <input type="text" id="search-input" class="search-bar" placeholder="Suchen..." oninput="renderList()">
+            <ul id="recipe-list" class="recipe-list"></ul>
+
+            <div class="backup-section">
+                <button class="backup-btn" onclick="exportData()">Backup Download</button>
+                <button class="backup-btn" onclick="document.getElementById('import-file').click()">Backup Import</button>
+                <input type="file" id="import-file" style="display:none" onchange="importData(event)">
+            </div>
+        </div>
+    </div>
+
+    <div id="detail-view">
+        <button class="back-btn" onclick="closeDetail()">Zurück</button>
+        <img id="full-image" src="" alt="Rezept">
+    </div>
+
+    <script>
+        // Logik bleibt identisch mit der iPhone-Version
+        let recipes = JSON.parse(localStorage.getItem('myRecipes')) || [];
+
+        function renderList() {
+            const listElement = document.getElementById('recipe-list');
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+            listElement.innerHTML = '';
+            recipes.filter(r => r.name.toLowerCase().includes(searchTerm)).forEach((recipe) => {
+                const originalIndex = recipes.indexOf(recipe);
+                const li = document.createElement('li');
+                li.className = 'recipe-item';
+                li.innerHTML = `<div class="recipe-name" onclick="openDetail(${originalIndex})">${recipe.name}</div>
+                                <button class="delete-btn" onclick="deleteRecipe(${originalIndex})">🗑️</button>`;
+                listElement.appendChild(li);
+            });
+        }
+
+        function processAndSave() {
+            const nameInput = document.getElementById('recipe-name'), fileInput = document.getElementById('recipe-file');
+            if (!nameInput.value || !fileInput.files[0]) return alert("Bitte Name und Bild wählen!");
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 1000;
+                    let width = img.width, height = img.height;
+                    if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                    canvas.width = width; canvas.height = height;
+                    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                    recipes.push({ name: nameInput.value, image: canvas.toDataURL('image/jpeg', 0.7) });
+                    saveToLocal();
+                    nameInput.value = ''; fileInput.value = ''; renderList();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(fileInput.files[0]);
+        }
+
+        function deleteRecipe(index) { if (confirm("Löschen?")) { recipes.splice(index, 1); saveToLocal(); renderList(); } }
+        function saveToLocal() { try { localStorage.setItem('myRecipes', JSON.stringify(recipes)); } catch(e) { alert("Speicher voll!"); } }
+        function openDetail(index) { document.getElementById('full-image').src = recipes[index].image; document.getElementById('detail-view').style.display = 'block'; }
+        function closeDetail() { document.getElementById('detail-view').style.display = 'none'; }
+        
+        function exportData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(recipes));
+            const dl = document.createElement('a');
+            dl.setAttribute("href", dataStr);
+            dl.setAttribute("download", "rezepte_backup.json");
+            dl.click();
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                recipes = JSON.parse(e.target.result);
+                saveToLocal();
+                renderList();
+            };
+            reader.readAsText(file);
+        }
+
+        renderList();
+    </script>
+</body>
+</html>
